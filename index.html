@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Explora el sistema solar en 3D con A-Frame, ratón, teclado y WebXR.">
+<title>Exploración espacial · Sistema solar</title>
+<script defer src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
+<style>
+  :root { color-scheme:dark; --night:#080b19; --panel:#131a32; --edge:#344365; --text:#edf0ff; --muted:#b2bcd6; --accent:#ffd69a; --ice:#a4c6ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; color:var(--text); background:radial-gradient(ellipse at 8% 0,#202852 0,transparent 48%),var(--night); font:1rem/1.5 system-ui,sans-serif; }
+  main { max-width:90rem; margin:auto; padding:clamp(1rem,3.4vw,3.2rem); }
+  header { display:flex; gap:1.2rem; flex-wrap:wrap; justify-content:space-between; align-items:center; margin-bottom:1.3rem; }
+  .heading p { color:var(--ice); margin:0 0 .4rem; font:750 .83rem ui-monospace,monospace; letter-spacing:.11em; }
+  h1 { margin:0; font-size:clamp(2.5rem,6.9vw,5.5rem); line-height:.96; letter-spacing:-.07em; }
+  h2 { margin:0; line-height:1.1; font-size:clamp(1.65rem,4vw,2.5rem); letter-spacing:-.035em; }
+  .controls { display:flex; flex-wrap:wrap; align-items:center; gap:.45rem; }
+  button { font:750 .9rem system-ui,sans-serif; color:var(--text); background:#151e39; padding:.62rem .82rem; border:1px solid var(--edge); border-radius:.55rem; cursor:pointer; }
+  button:hover, button[aria-pressed="true"] { border-color:var(--ice); }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  button:disabled { opacity:.62; cursor:default; }
+  .layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(14rem,19rem); gap:1rem; }
+  .stage { position:relative; min-height:clamp(22rem,57vw,44rem); overflow:hidden; border:1px solid var(--edge); border-radius:1rem; background:#0b1025; isolation:isolate; }
+  a-scene { position:absolute!important; inset:0; width:100%; height:100%; }
+  .stage-help { position:absolute; bottom:.85rem; left:.85rem; right:.85rem; margin:0; display:flex; flex-wrap:wrap; gap:.46rem; align-items:center; pointer-events:none; }
+  .stage-help span { background:#0e1629df; border:1px solid #465678; border-radius:.45rem; padding:.31rem .54rem; font-size:.85rem; }
+  .loading { position:absolute; inset:0; display:grid; place-items:center; padding:1rem; text-align:center; margin:0; color:var(--muted); pointer-events:none; }
+  aside { display:flex; flex-direction:column; gap:1rem; }
+  .facts,.picker { background:var(--panel); border:1px solid var(--edge); border-radius:1rem; padding:1.05rem; }
+  #type { margin:0 0 .45rem; color:var(--accent); font:750 .83rem ui-monospace,monospace; letter-spacing:.06em; }
+  #description { color:#d8def1; margin:.7rem 0 0; min-height:6rem; }
+  .picker h3 { margin:0 0 .7rem; font-size:1rem; }
+  #planets { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.42rem; }
+  #planets button { text-align:left; padding:.5rem; display:flex; gap:.4rem; align-items:center; }
+  #planets i { flex:0 0 .66rem; height:.66rem; border-radius:50%; background:var(--planet); }
+  .scale { color:var(--muted); margin:0; font-size:.91rem; }
+  #app-status { margin:.6rem 0 0; color:var(--ice); }
+  [hidden] { display:none!important; }
+  @media(max-width:785px) { .layout { grid-template-columns:1fr; } aside { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr)); } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="heading"><p>Sistema solar · A-Frame</p><h1>Exploración espacial</h1></div>
+    <div class="controls">
+      <button id="sound" type="button" aria-pressed="false">Sonido ambiental</button>
+      <button id="full" type="button">Pantalla completa</button>
+      <button id="vr" type="button" hidden>Entrar en VR</button>
+    </div>
+  </header>
+  <div class="layout">
+    <section class="stage" id="stage" aria-label="Sistema solar en tres dimensiones">
+      <p id="loading" class="loading" role="status">Cargando el sistema solar…</p>
+      <div class="stage-help"><span><strong>WASD</strong> para moverte</span><span><strong>Arrastra</strong> para mirar</span><span><strong>Clic</strong> para seleccionar</span></div>
+    </section>
+    <aside aria-label="Explorador de planetas">
+      <div class="facts" aria-live="polite" aria-atomic="true">
+        <p id="type">Estrella</p><h2 id="name">Sol</h2>
+        <p id="description">La estrella que concentra la mayor parte de la masa del sistema solar. Su luz y calor llegan a los planetas.</p>
+      </div>
+      <div class="picker"><h3>Elegir astro</h3><div id="planets"></div></div>
+      <p class="scale">Las dimensiones, distancias y velocidades orbitales son representaciones visuales y no están a escala.</p>
+    </aside>
+  </div>
+  <p id="app-status" role="status" hidden></p>
+</main>
+
+<template id="solar-template">
+  <a-scene embedded loading-screen="enabled:false" renderer="antialias:true; colorManagement:true"
+    vr-mode-ui="enabled:false" device-orientation-permission-ui="enabled:false"
+    background="color:#070a17" light="defaultLightsEnabled:false"
+    cursor__mouse="rayOrigin:mouse" cursor__xrselect="rayOrigin:xrselect" raycaster="objects:.astro; far:150"
+    webxr="referenceSpaceType:local-floor">
+    <a-entity id="universe" solar-system></a-entity>
+    <a-entity light="type:ambient; color:#a9bfff; intensity:.78"></a-entity>
+    <a-entity position="0 0 0" light="type:point; color:#fff0cc; intensity:62; distance:55; decay:1.2"></a-entity>
+    <a-entity position="-17 20 22" light="type:directional; color:#a8beff; intensity:.55"></a-entity>
+    <a-entity id="rig" position="0 10 29">
+      <a-camera id="eye" position="0 1.6 0" camera="fov:63; near:.09; far:250"
+        look-controls="pointerLockEnabled:false" wasd-controls="acceleration:26; fly:true">
+        <a-entity id="vr-facts" position="0 -.52 -2.5" visible="false"></a-entity>
+      </a-camera>
+    </a-entity>
+  </a-scene>
+</template>
+
+<script>
+  window.addEventListener("DOMContentLoaded",()=>{
+    const bodies=[
+      {id:"sun",name:"Sol",type:"Estrella",size:1.65,color:"#ffbd56",dark:"#e98638",light:"#ffe1a2",distance:0,speed:0,angle:0,info:"La estrella que concentra la mayor parte de la masa del sistema solar. Su luz y calor llegan a los planetas."},
+      {id:"mercury",name:"Mercurio",type:"Planeta rocoso",size:.32,color:"#9b9386",dark:"#59554f",light:"#d1c8b8",distance:2.8,speed:.32,angle:1.6,info:"Es el planeta más cercano al Sol. Su superficie tiene cráteres y su año dura 88 días terrestres."},
+      {id:"venus",name:"Venus",type:"Planeta rocoso",size:.50,color:"#e8bb72",dark:"#9c5d2f",light:"#ffe3a9",distance:4.05,speed:.235,angle:3.35,info:"Su atmósfera densa retiene calor y lo convierte en el planeta más caliente del sistema solar."},
+      {id:"earth",name:"Tierra",type:"Planeta rocoso",size:.55,color:"#4e90dc",dark:"#183c88",light:"#72bedf",distance:5.55,speed:.18,angle:.10,info:"Es el único planeta conocido con vida. El agua líquida cubre la mayor parte de su superficie."},
+      {id:"mars",name:"Marte",type:"Planeta rocoso",size:.40,color:"#c8714f",dark:"#6e312c",light:"#eba37d",distance:7.1,speed:.145,angle:2.40,info:"El óxido de hierro da a su superficie un tono rojizo. Alberga el monte Olimpo, un enorme volcán."},
+      {id:"jupiter",name:"Júpiter",type:"Gigante gaseoso",size:1.12,color:"#dcb294",dark:"#866953",light:"#f5d9bb",distance:10.05,speed:.087,angle:5.55,info:"Es el mayor de los planetas. La Gran Mancha Roja es una tormenta en su atmósfera."},
+      {id:"saturn",name:"Saturno",type:"Gigante gaseoso",size:.90,color:"#d6b878",dark:"#8e774f",light:"#f6e1a6",distance:13.5,speed:.059,angle:3.05,info:"Sus anillos contienen partículas de hielo y roca. Algunas son diminutas y otras alcanzan varios metros."},
+      {id:"uranus",name:"Urano",type:"Gigante helado",size:.67,color:"#83d5dd",dark:"#397a90",light:"#bbeced",distance:16.9,speed:.036,angle:5.06,info:"Su eje de rotación está muy inclinado. El metano de su atmósfera contribuye a su color azul verdoso."},
+      {id:"neptune",name:"Neptuno",type:"Gigante helado",size:.65,color:"#526fdf",dark:"#253b9c",light:"#a1adf3",distance:20.6,speed:.029,angle:4.13,info:"Es el planeta más lejano del Sol. En su atmósfera se han medido vientos muy intensos."},
+    ];
+    const byId=(id)=>document.getElementById(id);
+    const loading=byId("loading");
+    const appStatus=byId("app-status");
+    function showStatus(message){
+      appStatus.textContent=message;
+      appStatus.hidden=!message;
+    }
+    if (!window.AFRAME) {
+      loading.textContent="No se pudo cargar A-Frame. Revisa la conexión y recarga.";
+      return;
+    }
+
+    const {THREE}=AFRAME;
+    const picker=byId("planets");
+    const buttons=new Map();
+    let vrTexture;
+    const vrCanvas=document.createElement("canvas");
+    vrCanvas.width=768;
+    vrCanvas.height=280;
+    const vrPen=vrCanvas.getContext("2d");
+    function paintVR(body) {
+      if (!vrTexture) return;
+      vrPen.fillStyle="#131a32";
+      vrPen.fillRect(0,0,vrCanvas.width,vrCanvas.height);
+      vrPen.fillStyle="#ffd69a";
+      vrPen.font="600 25px sans-serif";
+      vrPen.fillText(body.type,35,53);
+      vrPen.fillStyle="#f1f2ff";
+      vrPen.font="bold 54px sans-serif";
+      vrPen.fillText(body.name,33,114);
+      vrPen.font="29px sans-serif";
+      let line="";
+      let y=164;
+      for (const word of body.info.split(" ")) {
+        if (vrPen.measureText(line+" "+word).width>692 && line) {
+          vrPen.fillText(line,35,y);
+          y+=36;
+          line=word;
+        } else line+=(line?" ":"")+word;
+      }
+      if (line) vrPen.fillText(line,35,y);
+      vrTexture.needsUpdate=true;
+    }
+    let selected=bodies[0];
+    function select(body) {
+      selected=body;
+      byId("type").textContent=body.type;
+      byId("name").textContent=body.name;
+      byId("description").textContent=body.info;
+      for (const [id,button] of buttons) button.setAttribute("aria-pressed",String(id===body.id));
+      paintVR(body);
+    }
+    for (const body of bodies) {
+      const button=document.createElement("button");
+      const dot=document.createElement("i");
+      button.type="button";
+      dot.setAttribute("aria-hidden","true");
+      dot.style.setProperty("--planet",body.color);
+      button.append(dot,body.name);
+      button.setAttribute("aria-pressed",String(body.id===selected.id));
+      button.addEventListener("click",()=>select(body));
+      buttons.set(body.id,button);
+      picker.append(button);
+    }
+    function seed(initial) {
+      let value=initial;
+      return ()=>{
+        value=(Math.imul(value,1664525)+1013904223)>>>0;
+        return value/4294967296;
+      };
+    }
+    function makeSurface(body,index) {
+      const map=document.createElement("canvas");
+      map.width=512;
+      map.height=256;
+      const paint=map.getContext("2d");
+      const random=seed(277+index*51);
+      paint.fillStyle=body.color;
+      paint.fillRect(0,0,512,256);
+      const gas=["jupiter","saturn","uranus","neptune","venus"].includes(body.id);
+      if (gas) {
+        for (let i=0;i<36;i++) {
+          paint.fillStyle=i%2?body.dark:body.light;
+          paint.globalAlpha=.08+random()*.31;
+          paint.fillRect(0,random()*256,512,2+random()*21);
+        }
+      }
+      for(let i=0;i<(gas?180:840);i++) {
+        paint.fillStyle=i%2?body.dark:body.light;
+        paint.globalAlpha=.06+random()*.19;
+        paint.beginPath();
+        paint.ellipse(random()*512,random()*256,2+random()*(gas?40:17),.75+random()*(gas?2.8:12),0,0,Math.PI*2);
+        paint.fill();
+      }
+      paint.globalAlpha=.82;
+      if (body.id==="earth") {
+        const continents=[[[39,68],[84,32],[140,50],[143,79],[116,98],[104,133],[84,130],[65,95]],
+          [[111,126],[150,126],[182,165],[164,199],[147,222],[131,179]],
+          [[237,79],[286,43],[360,42],[433,85],[367,119],[337,106],[310,130],[279,110],[239,118]],
+          [[230,115],[278,121],[289,152],[272,188],[249,198],[219,158]],
+          [[381,158],[425,149],[465,179],[451,197],[407,192]]];
+        paint.fillStyle="#6ea97a";
+        for (const shape of continents) {
+          paint.beginPath();
+          shape.forEach(([x,y],i)=>i?paint.lineTo(x,y):paint.moveTo(x,y));
+          paint.closePath();
+          paint.fill();
+        }
+        paint.globalAlpha=.56;
+        paint.fillStyle="#e0edf1";
+        paint.fillRect(0,0,512,17);
+        paint.fillRect(0,241,512,15);
+      }
+      if(body.id==="jupiter"){
+        paint.fillStyle="#b86754";
+        paint.beginPath();
+        paint.ellipse(385,160,29,10,0,0,Math.PI*2);
+        paint.fill();
+      }
+      const texture=new THREE.CanvasTexture(map);
+      texture.colorSpace=THREE.SRGBColorSpace;
+      return texture;
+    }
+    function stars() {
+      const random=seed(803);
+      const data=[],colors=[];
+      for(let i=0;i<1800;i++){
+        const height=random()*2-1,phi=random()*Math.PI*2;
+        const distance=56+random()*83;
+        const planar=Math.sqrt(1-height*height)*distance;
+        data.push(planar*Math.cos(phi),height*distance,planar*Math.sin(phi));
+        const shine=.36+random()*.63;
+        colors.push(shine*.75,shine*.84,shine);
+      }
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute("position",new THREE.Float32BufferAttribute(data,3));
+      geometry.setAttribute("color",new THREE.Float32BufferAttribute(colors,3));
+      return new THREE.Points(geometry,new THREE.PointsMaterial({size:.23,vertexColors:true,depthWrite:false}));
+    }
+    function orbit(distance) {
+      const positions=[];
+      for(let i=0;i<144;i++){
+        const t=i/144*Math.PI*2;
+        positions.push(new THREE.Vector3(Math.cos(t)*distance,0,Math.sin(t)*distance));
+      }
+      return new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(positions),
+        new THREE.LineBasicMaterial({color:"#627aa4",transparent:true,opacity:.32}));
+    }
+
+    AFRAME.registerComponent("solar-system",{
+      init(){
+        this.el.setObject3D("stars",stars());
+        this.all=[];
+        for (const [i,body] of bodies.entries()) {
+          const entity=document.createElement("a-entity");
+          entity.classList.add("astro");
+          const texture=makeSurface(body,i);
+          const material=body.id==="sun" ? new THREE.MeshBasicMaterial({map:texture})
+            : new THREE.MeshStandardMaterial({map:texture,roughness:1});
+          const mesh=new THREE.Mesh(new THREE.SphereGeometry(body.size,48,28),material);
+          if(body.id==="saturn"){
+            const ring=new THREE.Mesh(new THREE.RingGeometry(1.10,1.70,96),
+              new THREE.MeshBasicMaterial({color:"#e8d9b8",side:THREE.DoubleSide,opacity:.68,transparent:true}));
+            ring.rotation.x=Math.PI/2-.24;
+            ring.rotation.y=.33;
+            mesh.add(ring);
+          }
+          entity.setObject3D("mesh",mesh);
+          entity.addEventListener("click",(event)=>{
+            if (event.detail?.cursorEl) select(body);
+          });
+          this.el.append(entity);
+          if(body.distance) this.el.object3D.add(orbit(body.distance));
+          entity.object3D.position.set(Math.cos(body.angle)*body.distance,0,Math.sin(body.angle)*body.distance);
+          this.all.push({body,entity,angle:body.angle});
+        }
+      },
+      tick(_time,delta=0){
+        const seconds=Math.min(delta,80)/1000;
+        for (const entry of this.all) {
+          entry.angle+=entry.body.speed*seconds;
+          entry.entity.object3D.position.set(Math.cos(entry.angle)*entry.body.distance,0,Math.sin(entry.angle)*entry.body.distance);
+          entry.entity.object3D.rotation.y+=seconds*.20;
+        }
+      },
+    });
+
+    byId("stage").append(byId("solar-template").content.cloneNode(true));
+    const scene=byId("stage").querySelector("a-scene");
+    scene.addEventListener("renderstart",()=>{
+      loading.hidden=true;
+      const look=byId("eye").components["look-controls"];
+      if (look?.pitchObject) look.pitchObject.rotation.x=-.34;
+      const panel=byId("vr-facts");
+      vrTexture=new THREE.CanvasTexture(vrCanvas);
+      vrTexture.colorSpace=THREE.SRGBColorSpace;
+      panel.setObject3D("mesh",new THREE.Mesh(new THREE.PlaneGeometry(1.65,.60),new THREE.MeshBasicMaterial({map:vrTexture,depthTest:false})));
+      panel.getObject3D("mesh").renderOrder=10;
+      paintVR(selected);
+    },{once:true});
+    scene.addEventListener("enter-vr",()=>byId("vr-facts").setAttribute("visible",true));
+    scene.addEventListener("exit-vr",()=>byId("vr-facts").setAttribute("visible",false));
+    if (window.isSecureContext && navigator.xr?.isSessionSupported) {
+      navigator.xr.isSessionSupported("immersive-vr").then((supported)=>{byId("vr").hidden=!supported;}).catch(()=>{});
+    }
+    byId("vr").addEventListener("click",async()=>{
+      try { await scene.enterVR(); }
+      catch { showStatus("No se pudo iniciar la sesión de realidad virtual."); }
+    });
+    byId("full").addEventListener("click",async()=>{
+      try {
+        if(document.fullscreenElement) await document.exitFullscreen();
+        else await document.documentElement.requestFullscreen();
+      } catch { showStatus("El navegador no pudo activar la pantalla completa."); }
+    });
+    document.addEventListener("fullscreenchange",()=>{
+      byId("full").textContent=document.fullscreenElement?"Salir de pantalla completa":"Pantalla completa";
+    });
+
+    let audio,master,playing=false;
+    byId("sound").addEventListener("click",async()=>{
+      try {
+        if (!audio) {
+          audio=new (window.AudioContext||window.webkitAudioContext)();
+          master=audio.createGain();
+          master.gain.value=0;
+          master.connect(audio.destination);
+          for (const [index,frequency] of [45,67.4,89.9,134.8].entries()) {
+            const tone=audio.createOscillator(), level=audio.createGain();
+            tone.type="sine";
+            tone.frequency.value=frequency;
+            level.gain.value=.17/(index+1);
+            tone.connect(level).connect(master);
+            tone.start();
+          }
+        }
+        await audio.resume();
+        playing=!playing;
+        master.gain.setTargetAtTime(playing ? .25 : 0,audio.currentTime,.2);
+        byId("sound").setAttribute("aria-pressed",String(playing));
+        byId("sound").textContent=playing?"Silenciar ambiente":"Sonido ambiental";
+      } catch { showStatus("El sonido ambiental no está disponible en este navegador."); }
+    });
+  });
+</script>
+</body>
+</html>
